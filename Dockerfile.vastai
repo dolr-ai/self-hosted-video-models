@@ -1,6 +1,7 @@
 # Custom Vast.ai ComfyUI image with LTX-2 dependencies pre-installed
 # This eliminates the 5-7 minute dependency installation on worker startup
-FROM vastai/comfy:v0.11.1-cuda-13.1-py312
+# Using CUDA 12.9 to match PyTorch's cu12 dependencies
+FROM vastai/comfy:v0.11.1-cuda-12.9-py312
 
 # Set working directory
 WORKDIR /workspace/ComfyUI/custom_nodes
