@@ -13,14 +13,7 @@ entrypoint.sh &
 sleep 10
 
 # Copy pre-installed LTX-2 custom nodes from image to workspace
-echo "Setting up LTX-2 custom nodes..."
-mkdir -p /workspace/ComfyUI/custom_nodes
-if [ ! -d "/workspace/ComfyUI/custom_nodes/ComfyUI-LTXVideo" ]; then
-  cp -r /opt/custom_nodes/ComfyUI-LTXVideo /workspace/ComfyUI/custom_nodes/
-  echo "LTX-2 custom nodes copied from image (dependencies already installed)"
-else
-  echo "LTX-2 custom nodes already present"
-fi
+mkdir -p /workspace/ComfyUI/custom_nodes && cp -rn /opt/custom_nodes/ComfyUI-LTXVideo /workspace/ComfyUI/custom_nodes/ 2>/dev/null || true
 
 # Download LTX-2 model with aria2c (aria2c is pre-installed in custom image)
 echo "Checking for LTX-2 model..."
@@ -59,3 +52,6 @@ chmod +x /tmp/cleanup.sh
 # Start pyworker (serverless handler)
 cd /workspace
 wget -O - "https://raw.githubusercontent.com/vast-ai/pyworker/main/start_server.sh" | bash
+
+# Signal provisioning complete by removing the marker file
+rm -f /.provisioning
