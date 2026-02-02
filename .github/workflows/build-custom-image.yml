@@ -59,6 +59,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+          provenance: false
+          sbom: false
+          outputs: type=image,compression=zstd,compression-level=3,force-compression=true
 
       - name: Image info
         run: |

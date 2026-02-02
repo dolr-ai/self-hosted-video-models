@@ -1,3 +1,4 @@
 vast
 .venv/
 .claude/
+scripts/submit_job.py
