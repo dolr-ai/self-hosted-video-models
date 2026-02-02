@@ -18,13 +18,13 @@ RUN apt-get update -qq && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Pre-download the LTX-2 model to /opt (40GB - makes image large but workers instant)
-# Model is copied to /workspace at startup along with custom nodes
-RUN mkdir -p /opt/models && \
-    cd /opt/models && \
-    aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
-      -o ltx-2-19b-dev.safetensors \
-      https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors && \
-    rm -rf /tmp/* /var/tmp/*
+# Commented out - model downloads at runtime for faster image pulls
+# RUN mkdir -p /opt/models && \
+#     cd /opt/models && \
+#     aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
+#       -o ltx-2-19b-dev.safetensors \
+#       https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors && \
+#     rm -rf /tmp/* /var/tmp/*
 
 # Metadata
 LABEL maintainer="yral"

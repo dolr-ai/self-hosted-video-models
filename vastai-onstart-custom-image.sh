@@ -15,20 +15,22 @@ sleep 10
 # Copy pre-installed LTX-2 custom nodes from image to workspace
 mkdir -p /workspace/ComfyUI/custom_nodes && cp -rn /opt/custom_nodes/ComfyUI-LTXVideo /workspace/ComfyUI/custom_nodes/ 2>/dev/null || true
 
-# Copy pre-downloaded LTX-2 model from image to workspace
-echo "Copying LTX-2 model from image..."
+# Download LTX-2 model with aria2c (aria2c is pre-installed in custom image)
+echo "Checking for LTX-2 model..."
 mkdir -p /workspace/ComfyUI/models/checkpoints
-if [ ! -f "/workspace/ComfyUI/models/checkpoints/ltx-2-19b-dev.safetensors" ]; then
-  if [ -f "/opt/models/ltx-2-19b-dev.safetensors" ]; then
-    cp /opt/models/ltx-2-19b-dev.safetensors /workspace/ComfyUI/models/checkpoints/
-    echo "Model copied from image (instant startup)"
-  else
-    echo "Model not found in image, downloading..."
-    cd /workspace/ComfyUI/models/checkpoints
-    aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true --max-tries=5 --retry-wait=3 --timeout=60 --connect-timeout=30 --summary-interval=10 --console-log-level=warn -o ltx-2-19b-dev.safetensors https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors
+cd /workspace/ComfyUI/models/checkpoints
+
+if [ ! -f "ltx-2-19b-dev.safetensors" ]; then
+  echo "Downloading LTX-2 model..."
+  aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true --max-tries=5 --retry-wait=3 --timeout=60 --connect-timeout=30 --summary-interval=10 --console-log-level=warn -o ltx-2-19b-dev.safetensors https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors
+
+  # Fallback to wget if aria2c fails
+  if [ $? -ne 0 ]; then
+    echo "aria2c failed, falling back to wget..."
+    wget -c -O ltx-2-19b-dev.safetensors https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors
   fi
 else
-  echo "Model already exists in workspace"
+  echo "Model already exists, skipping download"
 fi
 
 # Periodic cleanup script (runs in background)
