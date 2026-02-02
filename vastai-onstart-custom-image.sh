@@ -52,3 +52,6 @@ chmod +x /tmp/cleanup.sh
 # Start pyworker (serverless handler)
 cd /workspace
 wget -O - "https://raw.githubusercontent.com/vast-ai/pyworker/main/start_server.sh" | bash
+
+# Signal provisioning complete by removing the marker file
+rm -f /.provisioning
