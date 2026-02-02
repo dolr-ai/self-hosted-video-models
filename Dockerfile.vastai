@@ -3,14 +3,11 @@
 # Using CUDA 12.9 to match PyTorch's cu12 dependencies
 FROM vastai/comfy:v0.11.1-cuda-12.9-py312
 
-# Set working directory
-WORKDIR /workspace/ComfyUI/custom_nodes
-
 # Pre-install LTX-2 custom nodes and dependencies
-RUN git clone https://github.com/Lightricks/ComfyUI-LTXVideo && \
+RUN cd /workspace/ComfyUI/custom_nodes && \
+    git clone https://github.com/Lightricks/ComfyUI-LTXVideo && \
     cd ComfyUI-LTXVideo && \
     pip install --no-cache-dir -r requirements.txt && \
-    cd /workspace && \
     rm -rf /tmp/* /var/tmp/*
 
 # Install aria2c for fast downloads (used in onstart script)
@@ -26,9 +23,6 @@ RUN apt-get update -qq && \
 #       -o ltx-2-19b-dev.safetensors \
 #       https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors && \
 #     rm -rf /tmp/* /var/tmp/*
-
-# Reset working directory
-WORKDIR /workspace
 
 # Metadata
 LABEL maintainer="yral"
