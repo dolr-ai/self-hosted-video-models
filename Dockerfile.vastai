@@ -4,7 +4,8 @@
 FROM vastai/comfy:v0.11.1-cuda-12.9-py312
 
 # Pre-install LTX-2 custom nodes and dependencies
-RUN cd /workspace/ComfyUI/custom_nodes && \
+RUN mkdir -p /workspace/ComfyUI/custom_nodes && \
+    cd /workspace/ComfyUI/custom_nodes && \
     git clone https://github.com/Lightricks/ComfyUI-LTXVideo && \
     cd ComfyUI-LTXVideo && \
     pip install --no-cache-dir -r requirements.txt && \
