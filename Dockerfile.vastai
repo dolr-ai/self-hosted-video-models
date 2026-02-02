@@ -3,9 +3,10 @@
 # Using CUDA 12.9 to match PyTorch's cu12 dependencies
 FROM vastai/comfy:v0.11.1-cuda-12.9-py312
 
-# Pre-install LTX-2 custom nodes and dependencies
-RUN mkdir -p /workspace/ComfyUI/custom_nodes && \
-    cd /workspace/ComfyUI/custom_nodes && \
+# Pre-install LTX-2 custom nodes to /opt (will be copied to /workspace at runtime)
+# /workspace is a volume and gets wiped, so we store in /opt and copy at startup
+RUN mkdir -p /opt/custom_nodes && \
+    cd /opt/custom_nodes && \
     git clone https://github.com/Lightricks/ComfyUI-LTXVideo && \
     cd ComfyUI-LTXVideo && \
     pip install --no-cache-dir -r requirements.txt && \
