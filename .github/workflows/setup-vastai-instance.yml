@@ -1,0 +1,176 @@
+name: Setup Vast.ai Instance
+
+on:
+  workflow_dispatch:
+    inputs:
+      ssh_host:
+        description: 'Vast.ai SSH host (e.g., 185.150.27.254)'
+        required: true
+        type: string
+      ssh_port:
+        description: 'Vast.ai SSH port (e.g., 30261)'
+        required: true
+        type: string
+      hf_token:
+        description: 'HuggingFace token (optional, for gated models)'
+        required: false
+        type: string
+      video_ttl_minutes:
+        description: 'Video cleanup TTL in minutes'
+        required: false
+        type: string
+        default: '10'
+      cleanup_check_interval:
+        description: 'Cleanup check interval in seconds'
+        required: false
+        type: string
+        default: '300'
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VASTAI_SSH_KEY }}" > ~/.ssh/vastai_key
+          chmod 600 ~/.ssh/vastai_key
+          ssh-keyscan -p ${{ github.event.inputs.ssh_port }} ${{ github.event.inputs.ssh_host }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Test SSH connection
+        run: |
+          ssh -i ~/.ssh/vastai_key -p ${{ github.event.inputs.ssh_port }} -o StrictHostKeyChecking=no root@${{ github.event.inputs.ssh_host }} "echo 'SSH connection successful' && uname -a"
+
+      - name: Check instance status
+        run: |
+          echo "Checking Vast.ai instance status..."
+          ssh -i ~/.ssh/vastai_key -p ${{ github.event.inputs.ssh_port }} -o StrictHostKeyChecking=no root@${{ github.event.inputs.ssh_host }} << 'EOF'
+            echo "========================================="
+            echo "Instance Status Check"
+            echo "========================================="
+            echo "Hostname: $(hostname)"
+            echo "Uptime: $(uptime)"
+            echo "Disk space:"
+            df -h /workspace || df -h /
+            echo ""
+            echo "GPU Status:"
+            nvidia-smi --query-gpu=name,memory.total,memory.used,memory.free --format=csv,noheader,nounits || echo "nvidia-smi not available"
+            echo ""
+            echo "Existing ComfyUI installation:"
+            if [ -d /workspace/ComfyUI ]; then
+              echo "  ✅ ComfyUI found at /workspace/ComfyUI"
+              echo "  Models:"
+              ls -lh /workspace/ComfyUI/models/checkpoints/*.safetensors 2>/dev/null || echo "    No models found"
+              ls -lh /workspace/ComfyUI/models/clip/LTX-2-comfy_gemma_fp8_e4m3fn/*.safetensors 2>/dev/null || echo "    No CLIP models found"
+            else
+              echo "  ❌ ComfyUI not found"
+            fi
+            echo "========================================="
+          EOF
+
+      - name: Copy setup script to instance
+        run: |
+          echo "Copying setup-ltx.sh to instance..."
+          scp -i ~/.ssh/vastai_key -P ${{ github.event.inputs.ssh_port }} -o StrictHostKeyChecking=no \
+            setup-ltx.sh root@${{ github.event.inputs.ssh_host }}:/tmp/setup-ltx.sh
+
+      - name: Copy video cleanup script to instance
+        run: |
+          echo "Copying video-cleanup.sh to instance..."
+          scp -i ~/.ssh/vastai_key -P ${{ github.event.inputs.ssh_port }} -o StrictHostKeyChecking=no \
+            video-cleanup.sh root@${{ github.event.inputs.ssh_host }}:/tmp/video-cleanup.sh
+
+      - name: Run setup script
+        run: |
+          echo "Running setup script on instance..."
+          ssh -i ~/.ssh/vastai_key -p ${{ github.event.inputs.ssh_port }} -o StrictHostKeyChecking=no root@${{ github.event.inputs.ssh_host }} << 'EOF'
+            export HF_TOKEN="${{ github.event.inputs.hf_token }}"
+            export VIDEO_TTL_MINUTES="${{ github.event.inputs.video_ttl_minutes }}"
+            export CLEANUP_CHECK_INTERVAL="${{ github.event.inputs.cleanup_check_interval }}"
+
+            # Set HuggingFace token if provided
+            if [ -n "$HF_TOKEN" ]; then
+              echo "Setting HuggingFace token..."
+              mkdir -p ~/.cache/huggingface
+              echo "$HF_TOKEN" > ~/.cache/huggingface/token
+            fi
+
+            # Run the setup script
+            bash /tmp/setup-ltx.sh
+          EOF
+
+      - name: Verify installation
+        run: |
+          echo "Verifying installation..."
+          ssh -i ~/.ssh/vastai_key -p ${{ github.event.inputs.ssh_port }} -o StrictHostKeyChecking=no root@${{ github.event.inputs.ssh_host }} << 'EOF'
+            echo "========================================="
+            echo "Installation Verification"
+            echo "========================================="
+
+            # Check ComfyUI
+            if supervisorctl status comfyui 2>/dev/null | grep -q RUNNING; then
+              echo "✅ ComfyUI is running"
+            else
+              echo "❌ ComfyUI is not running"
+              exit 1
+            fi
+
+            # Check API wrapper
+            if supervisorctl status comfyui-api-wrapper 2>/dev/null | grep -q RUNNING; then
+              echo "✅ ComfyUI API wrapper is running"
+            else
+              echo "⚠️  ComfyUI API wrapper is not running"
+            fi
+
+            # Check video cleanup script
+            if pgrep -f "video-cleanup.sh" > /dev/null; then
+              echo "✅ Video cleanup script is running"
+              PID=$(pgrep -f "video-cleanup.sh" | head -1)
+              echo "   PID: $PID"
+              tail -5 /var/log/video-cleanup.log 2>/dev/null || echo "   (no logs yet)"
+            else
+              echo "❌ Video cleanup script is not running"
+            fi
+
+            # Check models
+            echo ""
+            echo "Model Status:"
+            if [ -f /workspace/ComfyUI/models/checkpoints/ltx-2-19b-dev.safetensors ]; then
+              SIZE=$(du -h /workspace/ComfyUI/models/checkpoints/ltx-2-19b-dev.safetensors | cut -f1)
+              echo "  ✅ LTX-2 model: $SIZE"
+            else
+              echo "  ❌ LTX-2 model not found"
+            fi
+
+            if [ -f /workspace/ComfyUI/models/clip/LTX-2-comfy_gemma_fp8_e4m3fn/gemma_3_12B_it_fp8_e4m3fn.safetensors ]; then
+              SIZE=$(du -h /workspace/ComfyUI/models/clip/LTX-2-comfy_gemma_fp8_e4m3fn/gemma_3_12B_it_fp8_e4m3fn.safetensors | cut -f1)
+              echo "  ✅ Gemma FP8 model: $SIZE"
+            else
+              echo "  ❌ Gemma FP8 model not found"
+            fi
+
+            echo "========================================="
+            echo "Setup Complete!"
+            echo "========================================="
+          EOF
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ~/.ssh/vastai_key
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "🎉 Vast.ai instance setup completed successfully!"
+          echo ""
+          echo "Instance: ${{ github.event.inputs.ssh_host }}:${{ github.event.inputs.ssh_port }}"
+          echo "Video TTL: ${{ github.event.inputs.video_ttl_minutes }} minutes"
+          echo "Cleanup interval: ${{ github.event.inputs.cleanup_check_interval }} seconds"
+          echo ""
+          echo "To SSH into the instance:"
+          echo "  ssh -p ${{ github.event.inputs.ssh_port }} root@${{ github.event.inputs.ssh_host }}"
