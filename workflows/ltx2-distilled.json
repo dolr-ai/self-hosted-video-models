@@ -1,0 +1,175 @@
+{
+  "prompt": {
+    "1": {
+      "inputs": {
+        "ckpt_name": "ltx-2-19b-distilled.safetensors"
+      },
+      "class_type": "CheckpointLoaderSimple"
+    },
+    "1b": {
+      "inputs": {
+        "model": ["1", 0],
+        "mode": "max-autotune-no-cudagraphs",
+        "backend": "inductor",
+        "fullgraph": false,
+        "dynamic": false
+      },
+      "class_type": "CompileModel"
+    },
+    "2": {
+      "inputs": {
+        "gemma_path": "gemma-3-12b-it-qat-q4_0-unquantized/model-00001-of-00005.safetensors",
+        "ltxv_path": "ltx-2-19b-distilled.safetensors",
+        "max_length": 1024
+      },
+      "class_type": "LTXVGemmaCLIPModelLoader"
+    },
+    "3": {
+      "inputs": {
+        "ckpt_name": "ltx-2-19b-distilled.safetensors"
+      },
+      "class_type": "LTXVAudioVAELoader"
+    },
+    "4": {
+      "inputs": {
+        "image": "YOUR_IMAGE_PATH_HERE"
+      },
+      "class_type": "LoadImage"
+    },
+    "5": {
+      "inputs": {
+        "frames_number": 121,
+        "frame_rate": 24,
+        "batch_size": 1,
+        "audio_vae": ["3", 0]
+      },
+      "class_type": "LTXVEmptyLatentAudio"
+    },
+    "7": {
+      "inputs": {
+        "text": "YOUR_PROMPT_HERE",
+        "clip": ["2", 0]
+      },
+      "class_type": "CLIPTextEncode"
+    },
+    "8": {
+      "inputs": {
+        "text": "blurry, low quality, silent, distorted",
+        "clip": ["2", 0]
+      },
+      "class_type": "CLIPTextEncode"
+    },
+    "9": {
+      "inputs": {
+        "positive": ["7", 0],
+        "negative": ["8", 0],
+        "vae": ["1", 2],
+        "image": ["4", 0],
+        "width": 1920,
+        "height": 1088,
+        "length": 121,
+        "batch_size": 1,
+        "strength": 1.0
+      },
+      "class_type": "LTXVImgToVideo"
+    },
+    "9b": {
+      "inputs": {
+        "positive": ["9", 0],
+        "negative": ["9", 1],
+        "frame_rate": 24
+      },
+      "class_type": "LTXVConditioning"
+    },
+    "6": {
+      "inputs": {
+        "video_latent": ["9", 2],
+        "audio_latent": ["5", 0]
+      },
+      "class_type": "LTXVConcatAVLatent"
+    },
+    "10": {
+      "inputs": {
+        "seed": 0,
+        "steps": 10,
+        "cfg": 2.0,
+        "sampler_name": "ddim",
+        "scheduler": "ddim_uniform",
+        "denoise": 1,
+        "model": ["1b", 0],
+        "positive": ["9b", 0],
+        "negative": ["9b", 1],
+        "latent_image": ["6", 0]
+      },
+      "class_type": "KSampler"
+    },
+    "11": {
+      "inputs": {
+        "av_latent": ["10", 0]
+      },
+      "class_type": "LTXVSeparateAVLatent"
+    },
+    "12": {
+      "inputs": {
+        "samples": ["11", 0],
+        "vae": ["1", 2]
+      },
+      "class_type": "VAEDecode"
+    },
+    "12b": {
+      "inputs": {
+        "images": ["12", 0],
+        "factor": 0.8
+      },
+      "class_type": "AdjustContrast"
+    },
+    "13": {
+      "inputs": {
+        "samples": ["11", 1],
+        "audio_vae": ["3", 0]
+      },
+      "class_type": "LTXVAudioVAEDecode"
+    },
+    "14": {
+      "inputs": {
+        "fps": 24,
+        "images": ["12b", 0],
+        "audio": ["13", 0]
+      },
+      "class_type": "CreateVideo"
+    },
+    "15": {
+      "inputs": {
+        "filename_prefix": "ltx2-video",
+        "format": "mp4",
+        "codec": "h264",
+        "video": ["14", 0]
+      },
+      "class_type": "SaveVideo"
+    }
+  },
+  "_metadata": {
+    "model": "ltx-2-19b-distilled",
+    "type": "unified",
+    "modes": ["text-to-video", "image-to-video", "image+text-to-video"],
+    "resolution": "1920x1088 (1080p)",
+    "frames": 121,
+    "fps": 24,
+    "duration_seconds": 5.0,
+    "steps": 10,
+    "cfg": 2.0,
+    "sampler": "ddim",
+    "scheduler": "ddim_uniform",
+    "contrast": 0.8,
+    "optimizations": [
+      "torch.compile with inductor backend",
+      "max-autotune-no-cudagraphs mode",
+      "persistent cache at /workspace/torch_cache"
+    ],
+    "placeholders": {
+      "YOUR_IMAGE_PATH_HERE": "Path to input image (optional if text provided)",
+      "YOUR_PROMPT_HERE": "Text prompt describing desired video motion (optional if image provided)"
+    },
+    "notes": "Supports: Text→Video, Image→Video, or Image+Text→Video. At least one input required."
+  }
+}
