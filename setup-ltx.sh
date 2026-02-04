@@ -149,6 +149,28 @@ else
     echo "✅ Gemma text encoder found"
 fi
 
+# Set up persistent torch compile cache for fast inference
+TORCH_CACHE_DIR="/workspace/torch_cache"
+if [ ! -d "$TORCH_CACHE_DIR" ]; then
+    echo "📦 Creating torch compile cache directory..."
+    mkdir -p "$TORCH_CACHE_DIR"
+fi
+echo "✅ Torch compile cache: $TORCH_CACHE_DIR"
+
+# Configure ComfyUI startup with torch.compile optimizations
+COMFYUI_SCRIPT="/opt/supervisor-scripts/comfyui.sh"
+if [ -f "$COMFYUI_SCRIPT" ] && ! grep -q "TORCHINDUCTOR_CACHE_DIR" "$COMFYUI_SCRIPT" 2>/dev/null; then
+    echo "📦 Adding torch.compile optimizations..."
+    sed -i '1a\
+export TORCHINDUCTOR_CACHE_DIR=/workspace/torch_cache\
+export TORCH_COMPILE_DEBUG=0\
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True' "$COMFYUI_SCRIPT" 2>/dev/null || true
+    echo "✅ Torch optimizations configured"
+    NEEDS_RESTART=true
+else
+    echo "✅ Torch optimizations already configured"
+fi
+
 # Check if ComfyUI is running via supervisor
 if command -v supervisorctl &> /dev/null; then
     echo ""

@@ -9,12 +9,9 @@
     "1b": {
       "inputs": {
         "model": ["1", 0],
-        "mode": "max-autotune-no-cudagraphs",
-        "backend": "inductor",
-        "fullgraph": false,
-        "dynamic": false
+        "backend": "inductor"
       },
-      "class_type": "CompileModel"
+      "class_type": "TorchCompileModel"
     },
     "2": {
       "inputs": {
