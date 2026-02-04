@@ -11,10 +11,10 @@ echo "========================================="
 
 # Configuration
 COMFYUI_DIR="/workspace/ComfyUI"
-MODEL_PATH="${COMFYUI_DIR}/models/checkpoints/ltx-2-19b-dev.safetensors"
+MODEL_PATH="${COMFYUI_DIR}/models/checkpoints/ltx-2-19b-distilled.safetensors"
 CUSTOM_NODE_SRC="/opt/custom_nodes/ComfyUI-LTXVideo"
 CUSTOM_NODE_DEST="${COMFYUI_DIR}/custom_nodes/ComfyUI-LTXVideo"
-MODEL_URL="https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors"
+MODEL_URL="https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-distilled.safetensors"
 
 # Check if ComfyUI exists
 if [ ! -d "$COMFYUI_DIR" ]; then
@@ -69,10 +69,10 @@ if [ ! -f "$MODEL_PATH" ]; then
         aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
             --continue=true --max-tries=5 --retry-wait=3 \
             --summary-interval=10 --console-log-level=warn \
-            -o ltx-2-19b-dev.safetensors "$MODEL_URL"
+            -o ltx-2-19b-distilled.safetensors "$MODEL_URL"
     else
         # Fallback to wget
-        wget -c -O ltx-2-19b-dev.safetensors "$MODEL_URL"
+        wget -c -O ltx-2-19b-distilled.safetensors "$MODEL_URL"
     fi
 
     if [ -f "$MODEL_PATH" ]; then
@@ -83,6 +83,70 @@ if [ ! -f "$MODEL_PATH" ]; then
     fi
 else
     echo "✅ LTX-2 model found ($(du -h "$MODEL_PATH" | cut -f1))"
+fi
+
+# Check and download Gemma text encoder (required for LTX-2)
+GEMMA_DIR="${COMFYUI_DIR}/models/text_encoders/gemma-3-12b-it-qat-q4_0-unquantized"
+GEMMA_FILE="${GEMMA_DIR}/model-00001-of-00005.safetensors"
+
+# Get HF token from environment or cached file
+HF_TOKEN="${HF_TOKEN:-$(cat ~/.cache/huggingface/token 2>/dev/null || echo '')}"
+
+if [ ! -f "$GEMMA_FILE" ]; then
+    echo "❌ Gemma text encoder not found"
+
+    if [ -z "$HF_TOKEN" ]; then
+        echo "⚠️  Warning: No HuggingFace token found. Gemma is a gated model."
+        echo "   Set HF_TOKEN env var or run: huggingface-cli login"
+    fi
+
+    echo "📥 Downloading Gemma 3 12B text encoder (~23GB)..."
+
+    mkdir -p "$GEMMA_DIR"
+    cd "$GEMMA_DIR"
+
+    # Download all 5 shards
+    BASE_URL="https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-unquantized/resolve/main"
+
+    for i in 1 2 3 4 5; do
+        SHARD="model-0000${i}-of-00005.safetensors"
+        if [ ! -f "$SHARD" ]; then
+            echo "📥 Downloading shard ${i}/5..."
+            if command -v aria2c &> /dev/null; then
+                ARIA_OPTS="--max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true --max-tries=5 --retry-wait=3 --console-log-level=warn"
+                if [ -n "$HF_TOKEN" ]; then
+                    aria2c $ARIA_OPTS --header="Authorization: Bearer $HF_TOKEN" -o "$SHARD" "${BASE_URL}/${SHARD}"
+                else
+                    aria2c $ARIA_OPTS -o "$SHARD" "${BASE_URL}/${SHARD}"
+                fi
+            else
+                if [ -n "$HF_TOKEN" ]; then
+                    wget -c --header="Authorization: Bearer $HF_TOKEN" -O "$SHARD" "${BASE_URL}/${SHARD}"
+                else
+                    wget -c -O "$SHARD" "${BASE_URL}/${SHARD}"
+                fi
+            fi
+        else
+            echo "✅ Shard ${i}/5 already exists"
+        fi
+    done
+
+    # Also download config files (all required for LTXVGemmaCLIPModelLoader)
+    CONFIG_FILES="config.json tokenizer.json tokenizer_config.json tokenizer.model special_tokens_map.json generation_config.json preprocessor_config.json model.safetensors.index.json added_tokens.json"
+    for config_file in $CONFIG_FILES; do
+        if [ ! -f "$config_file" ]; then
+            echo "  Downloading $config_file..."
+            if [ -n "$HF_TOKEN" ]; then
+                wget -q --header="Authorization: Bearer $HF_TOKEN" -O "$config_file" "${BASE_URL}/${config_file}" 2>/dev/null || true
+            else
+                wget -q -O "$config_file" "${BASE_URL}/${config_file}" 2>/dev/null || true
+            fi
+        fi
+    done
+
+    echo "✅ Gemma text encoder downloaded"
+else
+    echo "✅ Gemma text encoder found"
 fi
 
 # Check if ComfyUI is running via supervisor

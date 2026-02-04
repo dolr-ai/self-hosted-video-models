@@ -1,0 +1,152 @@
+{
+  "prompt": {
+    "1": {
+      "inputs": {
+        "ckpt_name": "ltx-2-19b-distilled.safetensors"
+      },
+      "class_type": "CheckpointLoaderSimple"
+    },
+    "1b": {
+      "inputs": {
+        "model": ["1", 0],
+        "mode": "max-autotune-no-cudagraphs",
+        "backend": "inductor",
+        "fullgraph": false,
+        "dynamic": false
+      },
+      "class_type": "CompileModel"
+    },
+    "2": {
+      "inputs": {
+        "gemma_path": "gemma-3-12b-it-qat-q4_0-unquantized/model-00001-of-00005.safetensors",
+        "ltxv_path": "ltx-2-19b-distilled.safetensors",
+        "max_length": 1024
+      },
+      "class_type": "LTXVGemmaCLIPModelLoader"
+    },
+    "3": {
+      "inputs": {
+        "ckpt_name": "ltx-2-19b-distilled.safetensors"
+      },
+      "class_type": "LTXVAudioVAELoader"
+    },
+    "4": {
+      "inputs": {
+        "width": 1920,
+        "height": 1088,
+        "length": 81,
+        "batch_size": 1
+      },
+      "class_type": "EmptyLTXVLatentVideo"
+    },
+    "5": {
+      "inputs": {
+        "frames_number": 81,
+        "frame_rate": 24,
+        "batch_size": 1,
+        "audio_vae": ["3", 0]
+      },
+      "class_type": "LTXVEmptyLatentAudio"
+    },
+    "6": {
+      "inputs": {
+        "video_latent": ["4", 0],
+        "audio_latent": ["5", 0]
+      },
+      "class_type": "LTXVConcatAVLatent"
+    },
+    "7": {
+      "inputs": {
+        "text": "YOUR_PROMPT_HERE",
+        "clip": ["2", 0]
+      },
+      "class_type": "CLIPTextEncode"
+    },
+    "8": {
+      "inputs": {
+        "text": "blurry, low quality, silent, distorted",
+        "clip": ["2", 0]
+      },
+      "class_type": "CLIPTextEncode"
+    },
+    "9": {
+      "inputs": {
+        "positive": ["7", 0],
+        "negative": ["8", 0],
+        "frame_rate": 24
+      },
+      "class_type": "LTXVConditioning"
+    },
+    "10": {
+      "inputs": {
+        "seed": 0,
+        "steps": 8,
+        "cfg": 3.0,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 1,
+        "model": ["1b", 0],
+        "positive": ["9", 0],
+        "negative": ["9", 1],
+        "latent_image": ["6", 0]
+      },
+      "class_type": "KSampler"
+    },
+    "11": {
+      "inputs": {
+        "av_latent": ["10", 0]
+      },
+      "class_type": "LTXVSeparateAVLatent"
+    },
+    "12": {
+      "inputs": {
+        "samples": ["11", 0],
+        "vae": ["1", 2]
+      },
+      "class_type": "VAEDecode"
+    },
+    "13": {
+      "inputs": {
+        "samples": ["11", 1],
+        "audio_vae": ["3", 0]
+      },
+      "class_type": "LTXVAudioVAEDecode"
+    },
+    "14": {
+      "inputs": {
+        "fps": 24,
+        "images": ["12", 0],
+        "audio": ["13", 0]
+      },
+      "class_type": "CreateVideo"
+    },
+    "15": {
+      "inputs": {
+        "filename_prefix": "ltx2-distilled",
+        "format": "mp4",
+        "codec": "h264",
+        "video": ["14", 0]
+      },
+      "class_type": "SaveVideo"
+    }
+  },
+  "_metadata": {
+    "model": "ltx-2-19b-distilled",
+    "resolution": "1920x1088 (1080p)",
+    "frames": 81,
+    "fps": 24,
+    "duration_seconds": 3.375,
+    "steps": 8,
+    "optimizations": [
+      "torch.compile with inductor backend",
+      "max-autotune-no-cudagraphs mode",
+      "persistent cache at /workspace/torch_cache"
+    ],
+    "performance": {
+      "first_run_seconds": 444,
+      "cached_run_seconds": 28,
+      "vram_peak_gb": 74
+    },
+    "notes": "First run includes compilation overhead. Subsequent runs use cached kernels."
+  }
+}
