@@ -224,6 +224,198 @@ else
     echo "    python main.py --listen 0.0.0.0 --port 8188"
 fi
 
+# Patch API wrapper for better webhook support
+echo ""
+echo "📦 Patching ComfyUI API wrapper..."
+
+API_WRAPPER_DIR="/opt/comfyui-api-wrapper"
+PATCHES_APPLIED=false
+
+# Patch 1: Fix SSL verification for webhook callbacks using proper SSL context
+POSTPROCESS_WORKER="${API_WRAPPER_DIR}/workers/postprocess_worker.py"
+if [ -f "$POSTPROCESS_WORKER" ]; then
+    # Check if SSL patch is needed (look for the unpatched version)
+    if grep -q "async with aiohttp.ClientSession(timeout=timeout) as session:" "$POSTPROCESS_WORKER" 2>/dev/null; then
+        echo "  Patching SSL verification for webhooks..."
+
+        # Create Python script to apply the patch
+        cat > /tmp/patch_webhook_ssl.py << 'PATCHEOF'
+import re
+
+with open('/opt/comfyui-api-wrapper/workers/postprocess_worker.py', 'r') as f:
+    content = f.read()
+
+# Add ssl import if not present
+if 'import ssl' not in content:
+    content = content.replace('import aiohttp', 'import aiohttp\nimport ssl')
+
+# Replace the send_webhook function with SSL context version
+old_pattern = r'''    async def send_webhook\(self, webhook_url: str, result, extra_params: Dict = None\) -> None:
+        """Send webhook notification with result"""
+        try:
+            timeout = aiohttp\.ClientTimeout\(total=30\)
+
+            # Prepare webhook payload
+            webhook_data = \{
+                "id": result\.id,
+                "status": result\.status,
+                "message": result\.message,
+                "output": getattr\(result, 'output', \[\]\)
+            \}
+
+            # Add extra parameters if provided
+            if extra_params:
+                webhook_data\.update\(extra_params\)
+
+            async with aiohttp\.ClientSession\(timeout=timeout\) as session:
+                async with session\.post\(
+                    webhook_url,
+                    json=webhook_data,
+                    headers=\{'Content-Type': 'application/json'\}
+                \) as response:'''
+
+new_code = '''    async def send_webhook(self, webhook_url: str, result, extra_params: Dict = None) -> None:
+        """Send webhook notification with result"""
+        try:
+            timeout = aiohttp.ClientTimeout(total=30)
+
+            # Prepare webhook payload
+            webhook_data = {
+                "id": result.id,
+                "status": result.status,
+                "message": result.message,
+                "output": getattr(result, 'output', [])
+            }
+
+            # Add extra parameters if provided
+            if extra_params:
+                webhook_data.update(extra_params)
+
+            # Create a permissive SSL context that doesn't verify certificates
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+
+            connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                async with session.post(
+                    webhook_url,
+                    json=webhook_data,
+                    headers={'Content-Type': 'application/json'}
+                ) as response:'''
+
+content = re.sub(old_pattern, new_code, content)
+
+with open('/opt/comfyui-api-wrapper/workers/postprocess_worker.py', 'w') as f:
+    f.write(content)
+
+print('Patched!')
+PATCHEOF
+
+        python3 /tmp/patch_webhook_ssl.py
+        rm /tmp/patch_webhook_ssl.py
+        echo "  ✅ SSL verification patched for webhook callbacks"
+        PATCHES_APPLIED=true
+    else
+        echo "  ✅ SSL patch already applied"
+    fi
+fi
+
+# Patch 2: Increase WebSocket message timeout for torch.compile (first run takes longer)
+GENERATION_WORKER="${API_WRAPPER_DIR}/workers/generation_worker.py"
+if [ -f "$GENERATION_WORKER" ]; then
+    if grep -q "message_timeout = 60.0" "$GENERATION_WORKER" 2>/dev/null; then
+        echo "  Patching WebSocket timeout for torch.compile..."
+        sed -i 's/message_timeout = 60.0/message_timeout = 300.0/' "$GENERATION_WORKER"
+        echo "  ✅ WebSocket timeout increased to 300s"
+        PATCHES_APPLIED=true
+    else
+        echo "  ✅ Timeout patch already applied"
+    fi
+fi
+
+# Restart API wrapper to apply patches (clear pycache first)
+if [ "$PATCHES_APPLIED" = true ] && command -v supervisorctl &> /dev/null; then
+    if supervisorctl status api-wrapper 2>/dev/null | grep -q RUNNING; then
+        echo "  🔄 Restarting API wrapper to apply patches..."
+        supervisorctl stop api-wrapper 2>/dev/null || true
+        rm -rf "${API_WRAPPER_DIR}/__pycache__" "${API_WRAPPER_DIR}/workers/__pycache__" 2>/dev/null
+        supervisorctl start api-wrapper 2>/dev/null || true
+        sleep 2
+        echo "  ✅ API wrapper restarted"
+    fi
+fi
+
+# Patch Caddy to allow unauthenticated access to /view endpoint (for public video URLs)
+echo ""
+echo "📦 Patching Caddy for public /view access..."
+
+CADDYFILE="/etc/Caddyfile"
+if [ -f "$CADDYFILE" ]; then
+    # Check if patch already applied
+    if grep -q "@view_path" "$CADDYFILE" 2>/dev/null; then
+        echo "  ✅ Caddy /view patch already applied"
+    else
+        echo "  Applying /view route patch..."
+
+        # Backup original
+        cp "$CADDYFILE" "${CADDYFILE}.bak"
+
+        # Use Python to patch the :8188 block
+        python3 << 'CADDY_PATCH_EOF'
+import re
+
+with open("/etc/Caddyfile", "r") as f:
+    content = f.read()
+
+view_route = """
+
+\t@view_path {
+\t\tpath /view*
+\t}
+\troute @view_path {
+\t\treverse_proxy localhost:18188 {
+\t\t\theader_up Host {upstream_hostport}
+\t\t\theader_up X-Forwarded-Proto {forwarded_protocol}
+\t\t\theader_up X-Real-IP {real_ip}
+\t\t}
+\t}
+"""
+
+# Split into blocks by port
+blocks = re.split(r"(:\d+ \{)", content)
+new_content = ""
+
+for i, block in enumerate(blocks):
+    if block == ":8188 {":
+        new_content += block
+    elif i > 0 and blocks[i-1] == ":8188 {":
+        # Insert view_route after forwarded_protocol_map import in 8188 block
+        modified = block.replace(
+            "import forwarded_protocol_map\n\n\troute @noauth",
+            "import forwarded_protocol_map" + view_route + "\n\troute @noauth"
+        )
+        new_content += modified
+    else:
+        new_content += block
+
+with open("/etc/Caddyfile", "w") as f:
+    f.write(new_content)
+
+print("Caddy patched!")
+CADDY_PATCH_EOF
+
+        # Reload Caddy
+        if [ -x "/opt/portal-aio/caddy_manager/caddy" ]; then
+            /opt/portal-aio/caddy_manager/caddy reload --config "$CADDYFILE" 2>/dev/null && \
+                echo "  ✅ Caddy reloaded with /view patch" || \
+                echo "  ⚠️  Failed to reload Caddy"
+        fi
+    fi
+else
+    echo "  ⚠️  Caddyfile not found at $CADDYFILE"
+fi
+
 # Set up video cleanup script
 echo ""
 echo "📦 Setting up video cleanup script..."

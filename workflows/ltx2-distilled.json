@@ -51,7 +51,7 @@
     },
     "8": {
       "inputs": {
-        "text": "blurry, low quality, silent, distorted",
+        "text": "blurry, low quality, silent, distorted, duplicate, mirror, reflection, split, multiple people, two faces",
         "clip": ["2", 0]
       },
       "class_type": "CLIPTextEncode"
@@ -62,8 +62,8 @@
         "negative": ["8", 0],
         "vae": ["1", 2],
         "image": ["4", 0],
-        "width": 1920,
-        "height": 1088,
+        "width": 576,
+        "height": 1024,
         "length": 121,
         "batch_size": 1,
         "strength": 1.0
@@ -120,6 +120,16 @@
       },
       "class_type": "AdjustContrast"
     },
+    "12c": {
+      "inputs": {
+        "upscale_method": "lanczos",
+        "width": 1080,
+        "height": 1920,
+        "crop": "disabled",
+        "image": ["12b", 0]
+      },
+      "class_type": "ImageScale"
+    },
     "13": {
       "inputs": {
         "samples": ["11", 1],
@@ -130,7 +140,7 @@
     "14": {
       "inputs": {
         "fps": 24,
-        "images": ["12b", 0],
+        "images": ["12c", 0],
         "audio": ["13", 0]
       },
       "class_type": "CreateVideo"
@@ -149,7 +159,9 @@
     "model": "ltx-2-19b-distilled",
     "type": "unified",
     "modes": ["text-to-video", "image-to-video", "image+text-to-video"],
-    "resolution": "1920x1088 (1080p)",
+    "generation_resolution": "576x1024 (portrait)",
+    "output_resolution": "1080x1920 (1080p portrait)",
+    "upscale_method": "lanczos",
     "frames": 121,
     "fps": 24,
     "duration_seconds": 5.0,
@@ -161,12 +173,14 @@
     "optimizations": [
       "torch.compile with inductor backend",
       "max-autotune-no-cudagraphs mode",
-      "persistent cache at /workspace/torch_cache"
+      "persistent cache at /workspace/torch_cache",
+      "generate at 576x1024 to avoid mirroring artifacts",
+      "lanczos upscale to 1080p"
     ],
     "placeholders": {
       "YOUR_IMAGE_PATH_HERE": "Path to input image (optional if text provided)",
       "YOUR_PROMPT_HERE": "Text prompt describing desired video motion (optional if image provided)"
     },
-    "notes": "Supports: Text→Video, Image→Video, or Image+Text→Video. At least one input required."
+    "notes": "Supports: Text→Video, Image→Video, or Image+Text→Video. Generates at 576x1024 to avoid mirroring artifacts, then upscales to 1080p with lanczos."
   }
 }
