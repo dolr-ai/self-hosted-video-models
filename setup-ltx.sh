@@ -55,6 +55,105 @@ else
     echo "✅ LTX custom nodes found"
 fi
 
+# Check and install ComfyMath (required for CM_FloatToInt in LTX-2 workflows)
+COMFYMATH_DIR="${COMFYUI_DIR}/custom_nodes/ComfyMath"
+if [ ! -d "$COMFYMATH_DIR" ]; then
+    echo "📦 Installing ComfyMath custom nodes..."
+    cd "${COMFYUI_DIR}/custom_nodes"
+    git clone https://github.com/evanspearman/ComfyMath.git
+    cd ComfyMath
+    pip install -q -r requirements.txt 2>/dev/null || true
+    echo "✅ ComfyMath installed"
+    NEEDS_RESTART=true
+else
+    echo "✅ ComfyMath found"
+fi
+
+# Check and install ComfyUI Impact Pack (required for ImpactExecutionOrderController in I2V workflows)
+IMPACT_PACK_DIR="${COMFYUI_DIR}/custom_nodes/ComfyUI-Impact-Pack"
+if [ ! -d "$IMPACT_PACK_DIR" ]; then
+    echo "📦 Installing ComfyUI Impact Pack..."
+    cd "${COMFYUI_DIR}/custom_nodes"
+    git clone https://github.com/ltdrdata/ComfyUI-Impact-Pack.git
+    cd ComfyUI-Impact-Pack
+    if [ -f "/venv/main/bin/pip" ]; then
+        /venv/main/bin/pip install -q -r requirements.txt 2>/dev/null || true
+    else
+        pip install -q -r requirements.txt 2>/dev/null || true
+    fi
+    python3 install.py 2>/dev/null || true
+    echo "✅ Impact Pack installed"
+    NEEDS_RESTART=true
+else
+    echo "✅ Impact Pack found"
+fi
+
+# Check and install RES4LYF (required for res_2s sampler used in distilled workflows)
+RES4LYF_DIR="${COMFYUI_DIR}/custom_nodes/RES4LYF"
+if [ ! -d "$RES4LYF_DIR" ]; then
+    echo "📦 Installing RES4LYF custom nodes..."
+    cd "${COMFYUI_DIR}/custom_nodes"
+    git clone https://github.com/ClownsharkBatwing/RES4LYF.git
+    cd RES4LYF
+    # Install deps in venv if available, otherwise use system pip
+    if [ -f "/venv/main/bin/pip" ]; then
+        /venv/main/bin/pip install -q -r requirements.txt 2>/dev/null || true
+    else
+        pip install -q -r requirements.txt 2>/dev/null || true
+    fi
+    echo "✅ RES4LYF installed"
+    NEEDS_RESTART=true
+else
+    echo "✅ RES4LYF found"
+fi
+
+# Check and install Comfy-WaveSpeed (First Block Cache for ~1.5-2x diffusion speedup)
+WAVESPEED_DIR="${COMFYUI_DIR}/custom_nodes/Comfy-WaveSpeed"
+if [ ! -d "$WAVESPEED_DIR" ]; then
+    echo "📦 Installing Comfy-WaveSpeed..."
+    cd "${COMFYUI_DIR}/custom_nodes"
+    git clone https://github.com/chengzeyi/Comfy-WaveSpeed.git
+    cd Comfy-WaveSpeed
+    if [ -f "/venv/main/bin/pip" ]; then
+        /venv/main/bin/pip install -q -r requirements.txt 2>/dev/null || true
+    else
+        pip install -q -r requirements.txt 2>/dev/null || true
+    fi
+    echo "✅ Comfy-WaveSpeed installed"
+    NEEDS_RESTART=true
+else
+    echo "✅ Comfy-WaveSpeed found"
+fi
+
+# Install SageAttention for faster attention computation (~2-3x attention speedup)
+echo "📦 Checking SageAttention..."
+if ! python3 -c "import sageattention" 2>/dev/null; then
+    echo "📦 Installing SageAttention..."
+    if [ -f "/venv/main/bin/pip" ]; then
+        /venv/main/bin/pip install sageattention --no-build-isolation 2>/dev/null || true
+    else
+        pip install sageattention --no-build-isolation 2>/dev/null || true
+    fi
+    echo "✅ SageAttention installed"
+else
+    echo "✅ SageAttention found"
+fi
+
+# Copy example workflows to ComfyUI user directory so they appear in the UI
+EXAMPLE_WORKFLOWS="${CUSTOM_NODE_DEST}/example_workflows"
+USER_WORKFLOWS="${COMFYUI_DIR}/user/default/workflows"
+if [ -d "$EXAMPLE_WORKFLOWS" ]; then
+    mkdir -p "$USER_WORKFLOWS"
+    EXISTING_COUNT=$(ls "$USER_WORKFLOWS"/*.json 2>/dev/null | wc -l)
+    if [ "$EXISTING_COUNT" -eq 0 ]; then
+        echo "📦 Copying example workflows to ComfyUI..."
+        cp "$EXAMPLE_WORKFLOWS"/*.json "$USER_WORKFLOWS/"
+        echo "✅ Example workflows available in ComfyUI Workflows panel"
+    else
+        echo "✅ Example workflows already in ComfyUI"
+    fi
+fi
+
 # Check and download model
 if [ ! -f "$MODEL_PATH" ]; then
     echo "❌ LTX-2 model not found"
@@ -85,6 +184,61 @@ else
     echo "✅ LTX-2 model found ($(du -h "$MODEL_PATH" | cut -f1))"
 fi
 
+# Check and download LTX-2 dev model (base model for LoRA workflows)
+DEV_MODEL_PATH="${COMFYUI_DIR}/models/checkpoints/ltx-2-19b-dev.safetensors"
+DEV_MODEL_URL="https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors"
+
+if [ ! -f "$DEV_MODEL_PATH" ]; then
+    echo "❌ LTX-2 dev model not found"
+    echo "📥 Downloading LTX-2 dev model (~40GB)..."
+
+    mkdir -p "${COMFYUI_DIR}/models/checkpoints"
+    cd "${COMFYUI_DIR}/models/checkpoints"
+
+    if command -v aria2c &> /dev/null; then
+        aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
+            --continue=true --max-tries=5 --retry-wait=3 \
+            --summary-interval=10 --console-log-level=warn \
+            -o ltx-2-19b-dev.safetensors "$DEV_MODEL_URL"
+    else
+        wget -c -O ltx-2-19b-dev.safetensors "$DEV_MODEL_URL"
+    fi
+
+    if [ -f "$DEV_MODEL_PATH" ]; then
+        echo "✅ Dev model downloaded successfully ($(du -h "$DEV_MODEL_PATH" | cut -f1))"
+    else
+        echo "❌ Dev model download failed"
+        exit 1
+    fi
+else
+    echo "✅ LTX-2 dev model found ($(du -h "$DEV_MODEL_PATH" | cut -f1))"
+fi
+
+# Check and download distilled LoRA (for fast inference with dev model)
+LORA_DIR="${COMFYUI_DIR}/models/loras"
+DISTILLED_LORA_PATH="${LORA_DIR}/ltx-2-19b-distilled-lora-384.safetensors"
+DISTILLED_LORA_URL="https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-distilled-lora-384.safetensors"
+
+if [ ! -f "$DISTILLED_LORA_PATH" ]; then
+    echo "❌ Distilled LoRA not found"
+    echo "📥 Downloading LTX-2 distilled LoRA..."
+
+    mkdir -p "$LORA_DIR"
+    cd "$LORA_DIR"
+
+    if command -v aria2c &> /dev/null; then
+        aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
+            --continue=true --max-tries=5 --retry-wait=3 --console-log-level=warn \
+            -o "ltx-2-19b-distilled-lora-384.safetensors" "$DISTILLED_LORA_URL"
+    else
+        wget -c -O "ltx-2-19b-distilled-lora-384.safetensors" "$DISTILLED_LORA_URL"
+    fi
+
+    echo "✅ Distilled LoRA downloaded"
+else
+    echo "✅ Distilled LoRA found"
+fi
+
 # Check and download Gemma text encoder (required for LTX-2)
 GEMMA_DIR="${COMFYUI_DIR}/models/text_encoders/gemma-3-12b-it-qat-q4_0-unquantized"
 GEMMA_FILE="${GEMMA_DIR}/model-00001-of-00005.safetensors"
@@ -100,53 +254,51 @@ if [ ! -f "$GEMMA_FILE" ]; then
         echo "   Set HF_TOKEN env var or run: huggingface-cli login"
     fi
 
-    echo "📥 Downloading Gemma 3 12B text encoder (~23GB)..."
+    echo "📥 Cloning Gemma 3 12B text encoder (~23GB)..."
 
-    mkdir -p "$GEMMA_DIR"
-    cd "$GEMMA_DIR"
+    # Configure git credentials for HuggingFace
+    if [ -n "$HF_TOKEN" ]; then
+        git config --global credential.helper store
+        echo "https://user:${HF_TOKEN}@huggingface.co" > ~/.git-credentials
+    fi
 
-    # Download all 5 shards
-    BASE_URL="https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-unquantized/resolve/main"
+    cd "${COMFYUI_DIR}/models/text_encoders"
+    rm -rf gemma-3-12b-it-qat-q4_0-unquantized
+    git clone https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-unquantized
 
-    for i in 1 2 3 4 5; do
-        SHARD="model-0000${i}-of-00005.safetensors"
-        if [ ! -f "$SHARD" ]; then
-            echo "📥 Downloading shard ${i}/5..."
-            if command -v aria2c &> /dev/null; then
-                ARIA_OPTS="--max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true --max-tries=5 --retry-wait=3 --console-log-level=warn"
-                if [ -n "$HF_TOKEN" ]; then
-                    aria2c $ARIA_OPTS --header="Authorization: Bearer $HF_TOKEN" -o "$SHARD" "${BASE_URL}/${SHARD}"
-                else
-                    aria2c $ARIA_OPTS -o "$SHARD" "${BASE_URL}/${SHARD}"
-                fi
-            else
-                if [ -n "$HF_TOKEN" ]; then
-                    wget -c --header="Authorization: Bearer $HF_TOKEN" -O "$SHARD" "${BASE_URL}/${SHARD}"
-                else
-                    wget -c -O "$SHARD" "${BASE_URL}/${SHARD}"
-                fi
-            fi
-        else
-            echo "✅ Shard ${i}/5 already exists"
-        fi
-    done
-
-    # Also download config files (all required for LTXVGemmaCLIPModelLoader)
-    CONFIG_FILES="config.json tokenizer.json tokenizer_config.json tokenizer.model special_tokens_map.json generation_config.json preprocessor_config.json model.safetensors.index.json added_tokens.json"
-    for config_file in $CONFIG_FILES; do
-        if [ ! -f "$config_file" ]; then
-            echo "  Downloading $config_file..."
-            if [ -n "$HF_TOKEN" ]; then
-                wget -q --header="Authorization: Bearer $HF_TOKEN" -O "$config_file" "${BASE_URL}/${config_file}" 2>/dev/null || true
-            else
-                wget -q -O "$config_file" "${BASE_URL}/${config_file}" 2>/dev/null || true
-            fi
-        fi
-    done
-
-    echo "✅ Gemma text encoder downloaded"
+    if [ -f "$GEMMA_FILE" ]; then
+        echo "✅ Gemma text encoder cloned successfully"
+    else
+        echo "❌ Gemma text encoder clone failed"
+        exit 1
+    fi
 else
     echo "✅ Gemma text encoder found"
+fi
+
+# Check and download spatial upscaler (required for LTX-2 upscaling workflows)
+UPSCALER_DIR="${COMFYUI_DIR}/models/latent_upscale_models"
+UPSCALER_PATH="${UPSCALER_DIR}/ltx-2-spatial-upscaler-x2-1.0.safetensors"
+UPSCALER_URL="https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-spatial-upscaler-x2-1.0.safetensors"
+
+if [ ! -f "$UPSCALER_PATH" ]; then
+    echo "❌ Spatial upscaler not found"
+    echo "📥 Downloading LTX-2 spatial upscaler (~1GB)..."
+
+    mkdir -p "$UPSCALER_DIR"
+    cd "$UPSCALER_DIR"
+
+    if command -v aria2c &> /dev/null; then
+        aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
+            --continue=true --max-tries=5 --retry-wait=3 --console-log-level=warn \
+            -o "ltx-2-spatial-upscaler-x2-1.0.safetensors" "$UPSCALER_URL"
+    else
+        wget -c -O "ltx-2-spatial-upscaler-x2-1.0.safetensors" "$UPSCALER_URL"
+    fi
+
+    echo "✅ Spatial upscaler downloaded"
+else
+    echo "✅ Spatial upscaler found"
 fi
 
 # Set up persistent torch compile cache for fast inference
@@ -169,6 +321,24 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True' "$COMFYUI_SCRIPT" 2>/de
     NEEDS_RESTART=true
 else
     echo "✅ Torch optimizations already configured"
+fi
+
+# Add --use-sage-attention flag to ComfyUI startup if SageAttention is available
+# Note: COMFYUI_ARGS may be pre-set by the environment (e.g. Vast.ai), so we append
+# after the default assignment rather than modifying the default value
+if [ -f "$COMFYUI_SCRIPT" ]; then
+    PIP_BIN="/venv/main/bin/pip"
+    [ ! -f "$PIP_BIN" ] && PIP_BIN="pip"
+    if $PIP_BIN show sageattention &>/dev/null; then
+        if ! grep -q "use-sage-attention" "$COMFYUI_SCRIPT" 2>/dev/null; then
+            echo "📦 Enabling SageAttention in ComfyUI startup..."
+            sed -i '/^COMFYUI_ARGS=\${COMFYUI_ARGS/a COMFYUI_ARGS="${COMFYUI_ARGS} --use-sage-attention"' "$COMFYUI_SCRIPT" 2>/dev/null || true
+            echo "✅ SageAttention enabled"
+            NEEDS_RESTART=true
+        else
+            echo "✅ SageAttention already enabled in startup"
+        fi
+    fi
 fi
 
 # Check if ComfyUI is running via supervisor
