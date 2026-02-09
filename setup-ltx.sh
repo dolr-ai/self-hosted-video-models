@@ -125,6 +125,24 @@ else
     echo "✅ Comfy-WaveSpeed found"
 fi
 
+# Check and install KJNodes (required for TorchCompileVAE and TorchCompileModel)
+KJNODES_DIR="${COMFYUI_DIR}/custom_nodes/ComfyUI-KJNodes"
+if [ ! -d "$KJNODES_DIR" ]; then
+    echo "📦 Installing KJNodes..."
+    cd "${COMFYUI_DIR}/custom_nodes"
+    git clone https://github.com/kijai/ComfyUI-KJNodes.git
+    cd ComfyUI-KJNodes
+    if [ -f "/venv/main/bin/pip" ]; then
+        /venv/main/bin/pip install -q -r requirements.txt 2>/dev/null || true
+    else
+        pip install -q -r requirements.txt 2>/dev/null || true
+    fi
+    echo "✅ KJNodes installed"
+    NEEDS_RESTART=true
+else
+    echo "✅ KJNodes found"
+fi
+
 # Install SageAttention for faster attention computation (~2-3x attention speedup)
 echo "📦 Checking SageAttention..."
 if ! python3 -c "import sageattention" 2>/dev/null; then
@@ -237,6 +255,44 @@ if [ ! -f "$DISTILLED_LORA_PATH" ]; then
     echo "✅ Distilled LoRA downloaded"
 else
     echo "✅ Distilled LoRA found"
+fi
+
+# Check and download IC-LoRA Detailer
+DETAILER_LORA_PATH="${LORA_DIR}/ltx-2-19b-ic-lora-detailer.safetensors"
+DETAILER_LORA_URL="https://huggingface.co/Lightricks/LTX-2-19b-IC-LoRA-Detailer/resolve/main/ltx-2-19b-ic-lora-detailer.safetensors"
+
+if [ ! -f "$DETAILER_LORA_PATH" ]; then
+    echo "📥 Downloading IC-LoRA Detailer (~2.5GB)..."
+    mkdir -p "$LORA_DIR"
+    if command -v aria2c &> /dev/null; then
+        aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
+            --continue=true --max-tries=5 --retry-wait=3 --console-log-level=warn \
+            -d "$LORA_DIR" -o "ltx-2-19b-ic-lora-detailer.safetensors" "$DETAILER_LORA_URL"
+    else
+        wget -c -O "$DETAILER_LORA_PATH" "$DETAILER_LORA_URL"
+    fi
+    echo "✅ IC-LoRA Detailer downloaded"
+else
+    echo "✅ IC-LoRA Detailer found"
+fi
+
+# Check and download IC-LoRA Canny Control
+CANNY_LORA_PATH="${LORA_DIR}/ltx-2-19b-ic-lora-canny-control.safetensors"
+CANNY_LORA_URL="https://huggingface.co/Lightricks/LTX-2-19b-IC-LoRA-Canny-Control/resolve/main/ltx-2-19b-ic-lora-canny-control.safetensors"
+
+if [ ! -f "$CANNY_LORA_PATH" ]; then
+    echo "📥 Downloading IC-LoRA Canny Control (~650MB)..."
+    mkdir -p "$LORA_DIR"
+    if command -v aria2c &> /dev/null; then
+        aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
+            --continue=true --max-tries=5 --retry-wait=3 --console-log-level=warn \
+            -d "$LORA_DIR" -o "ltx-2-19b-ic-lora-canny-control.safetensors" "$CANNY_LORA_URL"
+    else
+        wget -c -O "$CANNY_LORA_PATH" "$CANNY_LORA_URL"
+    fi
+    echo "✅ IC-LoRA Canny Control downloaded"
+else
+    echo "✅ IC-LoRA Canny Control found"
 fi
 
 # Check and download Gemma text encoder (required for LTX-2)

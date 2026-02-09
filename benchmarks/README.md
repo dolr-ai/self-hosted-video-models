@@ -4,9 +4,13 @@
 
 | GPU | VRAM | Workflow | Without Optimizations | With Optimizations |
 |-----|------|----------|-----------------------|--------------------|
-| A100 80GB | 80GB | T2V Distilled | ~300s | ~140s |
-| A100 80GB | 80GB | T2V Full | ~800s | ~250s |
-| A100 80GB | 80GB | I2V Full | ~850s | ~300s |
+| A100 80GB | 80GB | Distilled | ~300s | ~140s |
+| A100 80GB | 80GB | Full | ~800s | ~250s |
+| H100 80GB | 80GB | Distilled | ~80-100s | ~30-50s |
+| H100 80GB | 80GB | Full | ~200s | ~90-100s |
+| H100 80GB (custom) | 80GB | Distilled | - | ~15-20s |
+| B200 192GB | 192GB | Distilled | ~60-80s | ~20-35s |
+| B200 192GB | 192GB | Full | ~150s | ~70-80s |
 
 ## Benchmark Test Config
 
