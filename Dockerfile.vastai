@@ -3,19 +3,61 @@
 # Using CUDA 12.9 to match PyTorch's cu12 dependencies
 FROM vastai/comfy:v0.11.1-cuda-12.9-py312
 
-# Pre-install LTX-2 custom nodes to /opt (will be copied to /workspace at runtime)
-# /workspace is a volume and gets wiped, so we store in /opt and copy at startup
-RUN mkdir -p /opt/custom_nodes && \
-    cd /opt/custom_nodes && \
-    git clone https://github.com/Lightricks/ComfyUI-LTXVideo && \
-    cd ComfyUI-LTXVideo && \
-    pip install --no-cache-dir -r requirements.txt && \
-    rm -rf /tmp/* /var/tmp/*
-
 # Install aria2c for fast downloads (used in onstart script)
 RUN apt-get update -qq && \
     apt-get install -y -qq aria2 && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Pre-install all custom nodes to /opt (will be copied to /workspace at runtime)
+# /workspace is a volume and gets wiped, so we store in /opt and copy at startup
+
+# 1. ComfyUI-LTXVideo (LTX-2 model support)
+RUN mkdir -p /opt/custom_nodes && \
+    cd /opt/custom_nodes && \
+    git clone https://github.com/Lightricks/ComfyUI-LTXVideo.git && \
+    cd ComfyUI-LTXVideo && \
+    pip install --no-cache-dir -r requirements.txt && \
+    rm -rf /tmp/* /var/tmp/*
+
+# 2. ComfyMath (CM_FloatToInt for LTX-2 workflows)
+RUN cd /opt/custom_nodes && \
+    git clone https://github.com/evanspearman/ComfyMath.git && \
+    cd ComfyMath && \
+    pip install --no-cache-dir -r requirements.txt 2>/dev/null || true && \
+    rm -rf /tmp/* /var/tmp/*
+
+# 3. ComfyUI-Impact-Pack (ImpactExecutionOrderController for I2V workflows)
+RUN cd /opt/custom_nodes && \
+    git clone https://github.com/ltdrdata/ComfyUI-Impact-Pack.git && \
+    cd ComfyUI-Impact-Pack && \
+    pip install --no-cache-dir -r requirements.txt 2>/dev/null || true && \
+    python3 install.py 2>/dev/null || true && \
+    rm -rf /tmp/* /var/tmp/*
+
+# 4. RES4LYF (res_2s sampler for distilled workflows)
+RUN cd /opt/custom_nodes && \
+    git clone https://github.com/ClownsharkBatwing/RES4LYF.git && \
+    cd RES4LYF && \
+    pip install --no-cache-dir -r requirements.txt 2>/dev/null || true && \
+    rm -rf /tmp/* /var/tmp/*
+
+# 5. Comfy-WaveSpeed (First Block Cache for diffusion speedup)
+RUN cd /opt/custom_nodes && \
+    git clone https://github.com/chengzeyi/Comfy-WaveSpeed.git && \
+    cd Comfy-WaveSpeed && \
+    pip install --no-cache-dir -r requirements.txt 2>/dev/null || true && \
+    rm -rf /tmp/* /var/tmp/*
+
+# 6. KJNodes (TorchCompileModel, TorchCompileVAE, LTXVChunkFeedForward, PathchSageAttentionKJ)
+RUN cd /opt/custom_nodes && \
+    git clone https://github.com/kijai/ComfyUI-KJNodes.git && \
+    cd ComfyUI-KJNodes && \
+    pip install --no-cache-dir -r requirements.txt 2>/dev/null || true && \
+    rm -rf /tmp/* /var/tmp/*
+
+# 7. SageAttention (faster attention computation, used with --use-sage-attention flag)
+RUN pip install --no-cache-dir sageattention --no-build-isolation 2>/dev/null || true && \
+    rm -rf /tmp/* /var/tmp/*
 
 # Pre-download the LTX-2 model to /opt (40GB - makes image large but workers instant)
 # Commented out - model downloads at runtime for faster image pulls
@@ -26,6 +68,8 @@ RUN apt-get update -qq && \
 #       https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors && \
 #     rm -rf /tmp/* /var/tmp/*
 
+COPY setup-ltx.sh /opt/setup/
+
 # Metadata
 LABEL maintainer="yral"
-LABEL description="ComfyUI with LTX-2 video generation model pre-installed"
+LABEL description="ComfyUI with LTX-2 video generation model and all custom nodes pre-installed"

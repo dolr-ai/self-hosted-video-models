@@ -5,6 +5,8 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "========================================="
 echo "ComfyUI LTX-2 Setup Script"
 echo "========================================="
@@ -397,6 +399,19 @@ if [ -f "$COMFYUI_SCRIPT" ]; then
     fi
 fi
 
+# Add --gpu-only flag to keep all models in GPU memory (prevents AudioVAE unloading latency)
+if [ -f "$COMFYUI_SCRIPT" ]; then
+    if ! grep -q "\-\-gpu-only" "$COMFYUI_SCRIPT" 2>/dev/null; then
+        echo "📦 Enabling --gpu-only mode in ComfyUI startup..."
+        sed -i '/--use-sage-attention/s/$/ --gpu-only/' "$COMFYUI_SCRIPT" 2>/dev/null || \
+        sed -i '/^COMFYUI_ARGS=\${COMFYUI_ARGS/a COMFYUI_ARGS="${COMFYUI_ARGS} --gpu-only"' "$COMFYUI_SCRIPT" 2>/dev/null || true
+        echo "✅ --gpu-only mode enabled"
+        NEEDS_RESTART=true
+    else
+        echo "✅ --gpu-only mode already enabled"
+    fi
+fi
+
 # Check if ComfyUI is running via supervisor
 if command -v supervisorctl &> /dev/null; then
     echo ""
@@ -457,89 +472,31 @@ echo "📦 Patching ComfyUI API wrapper..."
 API_WRAPPER_DIR="/opt/comfyui-api-wrapper"
 PATCHES_APPLIED=false
 
-# Patch 1: Fix SSL verification for webhook callbacks using proper SSL context
+# Patch 1: Fix SSL verification for webhook callbacks
+# The API wrapper uses aiohttp which fails on Fly.io's SSL certs from Vast.ai
+# We inject a permissive SSL context that skips cert verification
 POSTPROCESS_WORKER="${API_WRAPPER_DIR}/workers/postprocess_worker.py"
 if [ -f "$POSTPROCESS_WORKER" ]; then
-    # Check if SSL patch is needed (look for the unpatched version)
-    if grep -q "async with aiohttp.ClientSession(timeout=timeout) as session:" "$POSTPROCESS_WORKER" 2>/dev/null; then
+    if ! grep -q "ssl.CERT_NONE" "$POSTPROCESS_WORKER" 2>/dev/null; then
         echo "  Patching SSL verification for webhooks..."
 
-        # Create Python script to apply the patch
-        cat > /tmp/patch_webhook_ssl.py << 'PATCHEOF'
-import re
+        # Add 'import ssl' after 'import aiohttp' if not present
+        if ! grep -q "^import ssl" "$POSTPROCESS_WORKER" 2>/dev/null; then
+            sed -i '/^import aiohttp/a import ssl' "$POSTPROCESS_WORKER"
+        fi
 
-with open('/opt/comfyui-api-wrapper/workers/postprocess_worker.py', 'r') as f:
-    content = f.read()
+        # Inject SSL context before aiohttp.ClientSession creation
+        # This handles any version of the API wrapper that uses aiohttp.ClientSession
+        sed -i '/async with aiohttp\.ClientSession/i\
+            # Disable SSL verification for webhook callbacks (Vast.ai → Fly.io)\
+            ssl_ctx = ssl.create_default_context()\
+            ssl_ctx.check_hostname = False\
+            ssl_ctx.verify_mode = ssl.CERT_NONE\
+            connector = aiohttp.TCPConnector(ssl=ssl_ctx)' "$POSTPROCESS_WORKER"
 
-# Add ssl import if not present
-if 'import ssl' not in content:
-    content = content.replace('import aiohttp', 'import aiohttp\nimport ssl')
+        # Add connector= to the ClientSession call
+        sed -i 's/aiohttp\.ClientSession(timeout=timeout)/aiohttp.ClientSession(timeout=timeout, connector=connector)/' "$POSTPROCESS_WORKER"
 
-# Replace the send_webhook function with SSL context version
-old_pattern = r'''    async def send_webhook\(self, webhook_url: str, result, extra_params: Dict = None\) -> None:
-        """Send webhook notification with result"""
-        try:
-            timeout = aiohttp\.ClientTimeout\(total=30\)
-
-            # Prepare webhook payload
-            webhook_data = \{
-                "id": result\.id,
-                "status": result\.status,
-                "message": result\.message,
-                "output": getattr\(result, 'output', \[\]\)
-            \}
-
-            # Add extra parameters if provided
-            if extra_params:
-                webhook_data\.update\(extra_params\)
-
-            async with aiohttp\.ClientSession\(timeout=timeout\) as session:
-                async with session\.post\(
-                    webhook_url,
-                    json=webhook_data,
-                    headers=\{'Content-Type': 'application/json'\}
-                \) as response:'''
-
-new_code = '''    async def send_webhook(self, webhook_url: str, result, extra_params: Dict = None) -> None:
-        """Send webhook notification with result"""
-        try:
-            timeout = aiohttp.ClientTimeout(total=30)
-
-            # Prepare webhook payload
-            webhook_data = {
-                "id": result.id,
-                "status": result.status,
-                "message": result.message,
-                "output": getattr(result, 'output', [])
-            }
-
-            # Add extra parameters if provided
-            if extra_params:
-                webhook_data.update(extra_params)
-
-            # Create a permissive SSL context that doesn't verify certificates
-            ssl_ctx = ssl.create_default_context()
-            ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode = ssl.CERT_NONE
-
-            connector = aiohttp.TCPConnector(ssl=ssl_ctx)
-            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-                async with session.post(
-                    webhook_url,
-                    json=webhook_data,
-                    headers={'Content-Type': 'application/json'}
-                ) as response:'''
-
-content = re.sub(old_pattern, new_code, content)
-
-with open('/opt/comfyui-api-wrapper/workers/postprocess_worker.py', 'w') as f:
-    f.write(content)
-
-print('Patched!')
-PATCHEOF
-
-        python3 /tmp/patch_webhook_ssl.py
-        rm /tmp/patch_webhook_ssl.py
         echo "  ✅ SSL verification patched for webhook callbacks"
         PATCHES_APPLIED=true
     else
@@ -639,7 +596,7 @@ CADDY_PATCH_EOF
         fi
     fi
 else
-    echo "  ⚠️  Caddyfile not found at $CADDYFILE"
+    echo "  ⚠️  Caddy binary not found at $CADDY_BIN"
 fi
 
 # Set up video cleanup script
