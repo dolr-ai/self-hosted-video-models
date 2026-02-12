@@ -26,7 +26,7 @@
 
 **Positive Prompt:**
 ```
-Style: cinematic with warm golden-hour lighting. A medium close-up shot of a weathered old fisherman standing at the bow of a small wooden boat on a calm lake at dawn. He wears a faded olive rain jacket and a knit beanie, his gray stubble catching the soft amber light. He holds a fishing rod in one hand, the line taut and trembling as something pulls beneath the surface. His eyes widen with quiet surprise and he steadies his footing on the rocking deck. He mutters under his breath in a low gravelly voice: "Well I'll be... haven't felt a pull like that in thirty years." He slowly reels the line in, muscles tensing in his forearm, water droplets flicking off the line and catching the light. Behind him, mist drifts across the glassy lake surface, and birds call faintly in the distance. The camera holds steady on his hands and face, drifting slightly closer as the tension builds.
+Style: cinematic drama movie scene shows a closeup of a blonde woman wearing a red sweater hanging out of the open door of a moving train, looking outside and smiling. the camera is fixed to the train's side as the train moves forward on the track. the woman seems excited and says: \" I think we're almost there!\". we hear the train's engine in the background. then, a little boy with brown hair pops his head out of the train along with the woman, looking at her in excitement. he then asks her: \"This is Nana's old village, isn't it?\". she nodes and embraces him joyfully.
 ```
 
 **CLIP Text Encode (Negative) Prompt:**
