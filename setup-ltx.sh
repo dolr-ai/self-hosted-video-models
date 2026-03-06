@@ -57,93 +57,50 @@ else
     echo "✅ LTX custom nodes found"
 fi
 
-# Check and install ComfyMath (required for CM_FloatToInt in LTX-2 workflows)
-COMFYMATH_DIR="${COMFYUI_DIR}/custom_nodes/ComfyMath"
-if [ ! -d "$COMFYMATH_DIR" ]; then
-    echo "📦 Installing ComfyMath custom nodes..."
-    cd "${COMFYUI_DIR}/custom_nodes"
-    git clone https://github.com/evanspearman/ComfyMath.git
-    cd ComfyMath
-    pip install -q -r requirements.txt 2>/dev/null || true
-    echo "✅ ComfyMath installed"
-    NEEDS_RESTART=true
-else
-    echo "✅ ComfyMath found"
-fi
+# Helper: install a custom node — copy from /opt/custom_nodes if available, else git clone
+install_custom_node() {
+    local NAME="$1"       # directory name (e.g. ComfyMath)
+    local GIT_URL="$2"    # git clone URL
+    local DEST="${COMFYUI_DIR}/custom_nodes/${NAME}"
+    local SRC="/opt/custom_nodes/${NAME}"
 
-# Check and install ComfyUI Impact Pack (required for ImpactExecutionOrderController in I2V workflows)
-IMPACT_PACK_DIR="${COMFYUI_DIR}/custom_nodes/ComfyUI-Impact-Pack"
-if [ ! -d "$IMPACT_PACK_DIR" ]; then
-    echo "📦 Installing ComfyUI Impact Pack..."
-    cd "${COMFYUI_DIR}/custom_nodes"
-    git clone https://github.com/ltdrdata/ComfyUI-Impact-Pack.git
-    cd ComfyUI-Impact-Pack
-    if [ -f "/venv/main/bin/pip" ]; then
-        /venv/main/bin/pip install -q -r requirements.txt 2>/dev/null || true
-    else
-        pip install -q -r requirements.txt 2>/dev/null || true
+    if [ -d "$DEST" ]; then
+        echo "✅ ${NAME} found"
+        return
     fi
-    python3 install.py 2>/dev/null || true
-    echo "✅ Impact Pack installed"
-    NEEDS_RESTART=true
-else
-    echo "✅ Impact Pack found"
-fi
 
-# Check and install RES4LYF (required for res_2s sampler used in distilled workflows)
-RES4LYF_DIR="${COMFYUI_DIR}/custom_nodes/RES4LYF"
-if [ ! -d "$RES4LYF_DIR" ]; then
-    echo "📦 Installing RES4LYF custom nodes..."
-    cd "${COMFYUI_DIR}/custom_nodes"
-    git clone https://github.com/ClownsharkBatwing/RES4LYF.git
-    cd RES4LYF
-    # Install deps in venv if available, otherwise use system pip
-    if [ -f "/venv/main/bin/pip" ]; then
-        /venv/main/bin/pip install -q -r requirements.txt 2>/dev/null || true
+    mkdir -p "${COMFYUI_DIR}/custom_nodes"
+    if [ -d "$SRC" ]; then
+        echo "📦 Copying ${NAME} from image..."
+        cp -r "$SRC" "$DEST"
     else
-        pip install -q -r requirements.txt 2>/dev/null || true
+        echo "📦 Cloning ${NAME} from GitHub..."
+        git clone "$GIT_URL" "$DEST"
     fi
-    echo "✅ RES4LYF installed"
-    NEEDS_RESTART=true
-else
-    echo "✅ RES4LYF found"
-fi
 
-# Check and install Comfy-WaveSpeed (First Block Cache for ~1.5-2x diffusion speedup)
-WAVESPEED_DIR="${COMFYUI_DIR}/custom_nodes/Comfy-WaveSpeed"
-if [ ! -d "$WAVESPEED_DIR" ]; then
-    echo "📦 Installing Comfy-WaveSpeed..."
-    cd "${COMFYUI_DIR}/custom_nodes"
-    git clone https://github.com/chengzeyi/Comfy-WaveSpeed.git
-    cd Comfy-WaveSpeed
-    if [ -f "/venv/main/bin/pip" ]; then
-        /venv/main/bin/pip install -q -r requirements.txt 2>/dev/null || true
-    else
-        pip install -q -r requirements.txt 2>/dev/null || true
+    # Install requirements if present
+    if [ -f "${DEST}/requirements.txt" ]; then
+        if [ -f "/venv/main/bin/pip" ]; then
+            /venv/main/bin/pip install -q -r "${DEST}/requirements.txt" 2>/dev/null || true
+        else
+            pip install -q -r "${DEST}/requirements.txt" 2>/dev/null || true
+        fi
     fi
-    echo "✅ Comfy-WaveSpeed installed"
-    NEEDS_RESTART=true
-else
-    echo "✅ Comfy-WaveSpeed found"
-fi
 
-# Check and install KJNodes (required for TorchCompileVAE and TorchCompileModel)
-KJNODES_DIR="${COMFYUI_DIR}/custom_nodes/ComfyUI-KJNodes"
-if [ ! -d "$KJNODES_DIR" ]; then
-    echo "📦 Installing KJNodes..."
-    cd "${COMFYUI_DIR}/custom_nodes"
-    git clone https://github.com/kijai/ComfyUI-KJNodes.git
-    cd ComfyUI-KJNodes
-    if [ -f "/venv/main/bin/pip" ]; then
-        /venv/main/bin/pip install -q -r requirements.txt 2>/dev/null || true
-    else
-        pip install -q -r requirements.txt 2>/dev/null || true
+    # Impact Pack needs extra install step
+    if [ "$NAME" = "ComfyUI-Impact-Pack" ] && [ -f "${DEST}/install.py" ]; then
+        python3 "${DEST}/install.py" 2>/dev/null || true
     fi
-    echo "✅ KJNodes installed"
+
+    echo "✅ ${NAME} installed"
     NEEDS_RESTART=true
-else
-    echo "✅ KJNodes found"
-fi
+}
+
+install_custom_node "ComfyMath" "https://github.com/evanspearman/ComfyMath.git"
+install_custom_node "ComfyUI-Impact-Pack" "https://github.com/ltdrdata/ComfyUI-Impact-Pack.git"
+install_custom_node "RES4LYF" "https://github.com/ClownsharkBatwing/RES4LYF.git"
+install_custom_node "Comfy-WaveSpeed" "https://github.com/chengzeyi/Comfy-WaveSpeed.git"
+install_custom_node "ComfyUI-KJNodes" "https://github.com/kijai/ComfyUI-KJNodes.git"
 
 # Install SageAttention for faster attention computation (~2-3x attention speedup)
 echo "📦 Checking SageAttention..."
@@ -202,99 +159,6 @@ if [ ! -f "$MODEL_PATH" ]; then
     fi
 else
     echo "✅ LTX-2 model found ($(du -h "$MODEL_PATH" | cut -f1))"
-fi
-
-# Check and download LTX-2 dev model (base model for LoRA workflows)
-DEV_MODEL_PATH="${COMFYUI_DIR}/models/checkpoints/ltx-2-19b-dev.safetensors"
-DEV_MODEL_URL="https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-dev.safetensors"
-
-if [ ! -f "$DEV_MODEL_PATH" ]; then
-    echo "❌ LTX-2 dev model not found"
-    echo "📥 Downloading LTX-2 dev model (~40GB)..."
-
-    mkdir -p "${COMFYUI_DIR}/models/checkpoints"
-    cd "${COMFYUI_DIR}/models/checkpoints"
-
-    if command -v aria2c &> /dev/null; then
-        aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
-            --continue=true --max-tries=5 --retry-wait=3 \
-            --summary-interval=10 --console-log-level=warn \
-            -o ltx-2-19b-dev.safetensors "$DEV_MODEL_URL"
-    else
-        wget -c -O ltx-2-19b-dev.safetensors "$DEV_MODEL_URL"
-    fi
-
-    if [ -f "$DEV_MODEL_PATH" ]; then
-        echo "✅ Dev model downloaded successfully ($(du -h "$DEV_MODEL_PATH" | cut -f1))"
-    else
-        echo "❌ Dev model download failed"
-        exit 1
-    fi
-else
-    echo "✅ LTX-2 dev model found ($(du -h "$DEV_MODEL_PATH" | cut -f1))"
-fi
-
-# Check and download distilled LoRA (for fast inference with dev model)
-LORA_DIR="${COMFYUI_DIR}/models/loras"
-DISTILLED_LORA_PATH="${LORA_DIR}/ltx-2-19b-distilled-lora-384.safetensors"
-DISTILLED_LORA_URL="https://huggingface.co/Lightricks/LTX-2/resolve/main/ltx-2-19b-distilled-lora-384.safetensors"
-
-if [ ! -f "$DISTILLED_LORA_PATH" ]; then
-    echo "❌ Distilled LoRA not found"
-    echo "📥 Downloading LTX-2 distilled LoRA..."
-
-    mkdir -p "$LORA_DIR"
-    cd "$LORA_DIR"
-
-    if command -v aria2c &> /dev/null; then
-        aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
-            --continue=true --max-tries=5 --retry-wait=3 --console-log-level=warn \
-            -o "ltx-2-19b-distilled-lora-384.safetensors" "$DISTILLED_LORA_URL"
-    else
-        wget -c -O "ltx-2-19b-distilled-lora-384.safetensors" "$DISTILLED_LORA_URL"
-    fi
-
-    echo "✅ Distilled LoRA downloaded"
-else
-    echo "✅ Distilled LoRA found"
-fi
-
-# Check and download IC-LoRA Detailer
-DETAILER_LORA_PATH="${LORA_DIR}/ltx-2-19b-ic-lora-detailer.safetensors"
-DETAILER_LORA_URL="https://huggingface.co/Lightricks/LTX-2-19b-IC-LoRA-Detailer/resolve/main/ltx-2-19b-ic-lora-detailer.safetensors"
-
-if [ ! -f "$DETAILER_LORA_PATH" ]; then
-    echo "📥 Downloading IC-LoRA Detailer (~2.5GB)..."
-    mkdir -p "$LORA_DIR"
-    if command -v aria2c &> /dev/null; then
-        aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
-            --continue=true --max-tries=5 --retry-wait=3 --console-log-level=warn \
-            -d "$LORA_DIR" -o "ltx-2-19b-ic-lora-detailer.safetensors" "$DETAILER_LORA_URL"
-    else
-        wget -c -O "$DETAILER_LORA_PATH" "$DETAILER_LORA_URL"
-    fi
-    echo "✅ IC-LoRA Detailer downloaded"
-else
-    echo "✅ IC-LoRA Detailer found"
-fi
-
-# Check and download IC-LoRA Canny Control
-CANNY_LORA_PATH="${LORA_DIR}/ltx-2-19b-ic-lora-canny-control.safetensors"
-CANNY_LORA_URL="https://huggingface.co/Lightricks/LTX-2-19b-IC-LoRA-Canny-Control/resolve/main/ltx-2-19b-ic-lora-canny-control.safetensors"
-
-if [ ! -f "$CANNY_LORA_PATH" ]; then
-    echo "📥 Downloading IC-LoRA Canny Control (~650MB)..."
-    mkdir -p "$LORA_DIR"
-    if command -v aria2c &> /dev/null; then
-        aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M \
-            --continue=true --max-tries=5 --retry-wait=3 --console-log-level=warn \
-            -d "$LORA_DIR" -o "ltx-2-19b-ic-lora-canny-control.safetensors" "$CANNY_LORA_URL"
-    else
-        wget -c -O "$CANNY_LORA_PATH" "$CANNY_LORA_URL"
-    fi
-    echo "✅ IC-LoRA Canny Control downloaded"
-else
-    echo "✅ IC-LoRA Canny Control found"
 fi
 
 # Check and download Gemma text encoder (required for LTX-2)
@@ -381,34 +245,28 @@ else
     echo "✅ Torch optimizations already configured"
 fi
 
-# Add --use-sage-attention flag to ComfyUI startup if SageAttention is available
-# Note: COMFYUI_ARGS may be pre-set by the environment (e.g. Vast.ai), so we append
-# after the default assignment rather than modifying the default value
+# Add extra ComfyUI flags: --use-sage-attention (if installed) and --gpu-only
+# We append a single line after the default COMFYUI_ARGS assignment
 if [ -f "$COMFYUI_SCRIPT" ]; then
+    EXTRA_FLAGS=""
+
+    # Check SageAttention
     PIP_BIN="/venv/main/bin/pip"
     [ ! -f "$PIP_BIN" ] && PIP_BIN="pip"
     if $PIP_BIN show sageattention &>/dev/null; then
-        if ! grep -q "use-sage-attention" "$COMFYUI_SCRIPT" 2>/dev/null; then
-            echo "📦 Enabling SageAttention in ComfyUI startup..."
-            sed -i '/^COMFYUI_ARGS=\${COMFYUI_ARGS/a COMFYUI_ARGS="${COMFYUI_ARGS} --use-sage-attention"' "$COMFYUI_SCRIPT" 2>/dev/null || true
-            echo "✅ SageAttention enabled"
-            NEEDS_RESTART=true
-        else
-            echo "✅ SageAttention already enabled in startup"
-        fi
+        EXTRA_FLAGS="--use-sage-attention"
     fi
-fi
 
-# Add --gpu-only flag to keep all models in GPU memory (prevents AudioVAE unloading latency)
-if [ -f "$COMFYUI_SCRIPT" ]; then
+    # Always add --gpu-only (keeps all models in GPU memory)
+    EXTRA_FLAGS="${EXTRA_FLAGS} --gpu-only"
+
     if ! grep -q "\-\-gpu-only" "$COMFYUI_SCRIPT" 2>/dev/null; then
-        echo "📦 Enabling --gpu-only mode in ComfyUI startup..."
-        sed -i '/--use-sage-attention/s/$/ --gpu-only/' "$COMFYUI_SCRIPT" 2>/dev/null || \
-        sed -i '/^COMFYUI_ARGS=\${COMFYUI_ARGS/a COMFYUI_ARGS="${COMFYUI_ARGS} --gpu-only"' "$COMFYUI_SCRIPT" 2>/dev/null || true
-        echo "✅ --gpu-only mode enabled"
+        echo "📦 Adding ComfyUI flags:${EXTRA_FLAGS}..."
+        sed -i "/^COMFYUI_ARGS=\${COMFYUI_ARGS/a COMFYUI_ARGS=\"\${COMFYUI_ARGS} ${EXTRA_FLAGS}\"" "$COMFYUI_SCRIPT" 2>/dev/null || true
+        echo "✅ ComfyUI flags configured"
         NEEDS_RESTART=true
     else
-        echo "✅ --gpu-only mode already enabled"
+        echo "✅ ComfyUI flags already configured"
     fi
 fi
 
